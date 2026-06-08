@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PORT="${KOKORO_PORT:-19200}"
+NODE="${KOKORO_NODE:-node}"
+
+if curl -sf "http://127.0.0.1:${PORT}/status" >/dev/null 2>&1; then
+  echo "Kokoro server already running on port ${PORT}"
+  curl -s "http://127.0.0.1:${PORT}/status" | python3 -m json.tool 2>/dev/null || true
+  exit 0
+fi
+
+echo "Starting Kokoro server on port ${PORT}…"
+nohup "$NODE" "$ROOT/lib/server/index.mjs" --port "$PORT" >>"${TMPDIR:-/tmp}/kokoro-server.log" 2>&1 &
+disown 2>/dev/null || true
+
+for i in $(seq 1 120); do
+  if curl -sf "http://127.0.0.1:${PORT}/status" | grep -q '"ready":true'; then
+    echo "Ready."
+    curl -s "http://127.0.0.1:${PORT}/status" | python3 -m json.tool 2>/dev/null || true
+    exit 0
+  fi
+  sleep 1
+done
+
+echo "Timed out waiting for server. Log: ${TMPDIR:-/tmp}/kokoro-server.log" >&2
+exit 1

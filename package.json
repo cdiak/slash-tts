@@ -1,0 +1,12 @@
+{
+  "name": "grok-build-cli-tts",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "kokoro-js": "^1.2.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
