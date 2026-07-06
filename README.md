@@ -79,12 +79,18 @@ paths = ["~/grok-build-cli-tts/.grok/skills/tts"]
 ## Usage in Grok Build
 
 ```
+/tts pydoc os          # read pydoc verbatim (fast path)
+/tts man xargs         # read man page verbatim
 /tts recent
 /tts no-play src/main.ts
-/tts ./my-project
 /tts stop
-/tts pause
-/tts resume
+```
+
+Direct CLI (bypasses LLM script generation):
+
+```bash
+kokoro-read --detach pydoc os
+kokoro-read --detach man xargs
 ```
 
 ## Playback controls

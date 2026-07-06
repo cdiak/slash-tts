@@ -79,6 +79,8 @@ Override Kokoro: GROK_TTS_HOME, KOKORO_PORT, KOKORO_VOICE, KOKORO_SERVER_DIR env
 | `stop`, `end`, "stop playback", "stop tts" | **CONTROL_STOP** — run `kokoro-stop` only |
 | `pause`, "pause playback" | **CONTROL_PAUSE** — run `kokoro-pause` only |
 | `resume`, "resume playback", "unpause" | **CONTROL_RESUME** — run `kokoro-resume` only |
+| `pydoc TOPIC` | **READ_ALOUD** — `kokoro-read --detach pydoc TOPIC` |
+| `man PAGE` | **READ_ALOUD** — `kokoro-read --detach man PAGE` |
 | Ambiguous | Ask once: recent reply, one file, directory, or terminal output? |
 
 Read files with tools when needed. For **RECENT**, use conversation context first; re-read cited paths if the summary is thin.
@@ -194,6 +196,14 @@ If none resolve, tell the user to clone https://github.com/cdiak/grok-build-cli-
 Optional warm server: `kokoro-server` (same resolution rules for `bin/`).
 
 Env: `KOKORO_SERVER_DIR`, `KOKORO_PORT`, `KOKORO_VOICE`, `KOKORO_KEEP_SERVER=1` (default), `KOKORO_REPLACE_QUEUE=1` (default).
+
+### Mode: READ_ALOUD (pydoc, man)
+
+Read-along voice: speak the source verbatim, not an AI rewrite. No markdown script — one short reply line only.
+
+```bash
+kokoro-read --detach pydoc os    # or: kokoro-read --detach man xargs
+```
 
 ### Mode: CONTROL_STOP / CONTROL_PAUSE / CONTROL_RESUME
 
