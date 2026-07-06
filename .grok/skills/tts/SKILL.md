@@ -10,7 +10,7 @@ metadata:
 when-to-use: >
   User runs /tts; wants a listenable version of recent output, a file, a directory,
   or the whole repo; or asks for TTS-friendly / speech-ready narration.
-argument-hint: "[path] | recent | last | no-play | <file-or-dir>"
+argument-hint: "stop | pause | resume | man <page> | [path] | recent | no-play"
 user-invocable: true
 compatibility: Requires grok-build-cli-tts, Node ≥18, macOS for playback
 ---
@@ -44,16 +44,24 @@ Modes (pick from context or argument):
 
   no-play          Write script only; skip Kokoro (ElevenLabs copy-paste mode).
 
+  stop, end        End playback immediately (runs kokoro-stop).
+  pause            Pause playback (requires ffplay; brew install ffmpeg).
+  resume           Resume paused playback.
+
 Examples:
   /tts
   /tts recent
   /tts no-play src/lib/parser.ts
   /tts ./my-project
   /tts explain the test failure in the last terminal block
+  /tts stop
+  /tts pause
+  /tts resume
 
 Output: one markdown script (## per file, ### per function), then Kokoro plays it
 unless the user said no-play or playback fails.
 
+Playback controls: /tts stop | pause | resume shell out to kokoro-stop | kokoro-pause | kokoro-resume.
 Override Kokoro: GROK_TTS_HOME, KOKORO_PORT, KOKORO_VOICE, KOKORO_SERVER_DIR env vars.
 ```
 
@@ -68,6 +76,9 @@ Override Kokoro: GROK_TTS_HOME, KOKORO_PORT, KOKORO_VOICE, KOKORO_SERVER_DIR env
 | Path to directory, or "repo", "codebase", "whole project" | **REPO** |
 | "terminal", "command output", "build log" | **TERMINAL** — quoted or read from cited path / session |
 | `no-play`, "elevenlabs only", "no kokoro" | **NO_PLAY** — script only, skip Kokoro step |
+| `stop`, `end`, "stop playback", "stop tts" | **CONTROL_STOP** — run `kokoro-stop` only |
+| `pause`, "pause playback" | **CONTROL_PAUSE** — run `kokoro-pause` only |
+| `resume`, "resume playback", "unpause" | **CONTROL_RESUME** — run `kokoro-resume` only |
 | Ambiguous | Ask once: recent reply, one file, directory, or terminal output? |
 
 Read files with tools when needed. For **RECENT**, use conversation context first; re-read cited paths if the summary is thin.
@@ -170,30 +181,42 @@ Do not attach a separate file unless they explicitly ask to write `something.tts
 
 After the markdown script is written, **start local playback** so the user hears it immediately.
 
-### Resolve `kokoro-speak` (in order)
+### Resolve Kokoro binaries (in order)
 
-1. `$GROK_TTS_HOME/bin/kokoro-speak` if `GROK_TTS_HOME` is set
-2. `kokoro-speak` on `PATH` (after `./bin/install`)
-3. If this skill is repo-scoped: `<repo-root>/bin/kokoro-speak` (three levels up from `.grok/skills/tts/`)
+For `kokoro-speak`, `kokoro-stop`, `kokoro-pause`, `kokoro-resume`, `kokoro-server`:
+
+1. `$GROK_TTS_HOME/bin/<cmd>` if `GROK_TTS_HOME` is set
+2. `<cmd>` on `PATH` (after `./bin/install`)
+3. If this skill is repo-scoped: `<repo-root>/bin/<cmd>` (three levels up from `.grok/skills/tts/`)
 
 If none resolve, tell the user to clone https://github.com/cdiak/grok-build-cli-tts and run `./bin/install`.
 
 Optional warm server: `kokoro-server` (same resolution rules for `bin/`).
 
-Env: `KOKORO_SERVER_DIR` (default `lib/server` in repo), `KOKORO_PORT`, `KOKORO_VOICE`, `KOKORO_KEEP_SERVER=1` (default).
+Env: `KOKORO_SERVER_DIR`, `KOKORO_PORT`, `KOKORO_VOICE`, `KOKORO_KEEP_SERVER=1` (default), `KOKORO_REPLACE_QUEUE=1` (default).
+
+### Mode: CONTROL_STOP / CONTROL_PAUSE / CONTROL_RESUME
+
+No script. Run exactly one command and report stderr in one sentence:
+
+```bash
+kokoro-stop    # or kokoro-pause / kokoro-resume
+```
+
+Do not block waiting for playback to finish.
 
 ### Agent workflow (required unless NO_PLAY)
 
 1. Write the full TTS markdown reply in the chat (as today).
 2. Save the **same body** to a temp file, e.g. `/tmp/grok-tts-<timestamp>.md` (include everything through `<!-- tts:end -->`; the player strips headers and that comment).
-3. **Pre-warm** (fast path when server already loaded): if `curl -sf http://127.0.0.1:${KOKORO_PORT:-19200}/status` shows `"ready":true`, skip to step 4. Otherwise run `kokoro-server` once and wait for Ready (cold model load is ~20–40s; first-ever download can take 1–3 min).
-4. Run kokoro-speak in the **foreground** with a long `block_until_ms` (long REPO scripts take several minutes to play). Do **not** background kokoro-speak — cancelled agent turns leave orphan clients that used to block the speak queue for minutes.
+3. **Pre-warm**: if `curl -sf http://127.0.0.1:${KOKORO_PORT:-19200}/status` shows `"ready":true`, skip server start. Otherwise run `kokoro-server` and wait for ready (cold model load ~20–40s; first-ever download 1–3 min).
+4. Start playback **detached** so the user can stop/pause from another `/tts` invocation:
 
    ```bash
-   kokoro-speak /tmp/grok-tts-<timestamp>.md
+   kokoro-speak --detach /tmp/grok-tts-<timestamp>.md
    ```
 
-   New invocations auto-cancel stale `kokoro-speak` clients and replace any in-flight server queue (`KOKORO_REPLACE_QUEUE=1` default). stderr shows progress: server warm/loading, first audio chunk timing.
+   New playback replaces any in-flight job (`KOKORO_REPLACE_QUEUE=1`). Stale clients are killed automatically. PID is written to `var/kokoro-client.pid` under `GROK_TTS_HOME`. stderr shows first audio chunk timing.
 
 5. If synthesis fails, append **one short line** after the script: `Playback failed: <reason>. Use no-play or check Kokoro server.` Do not replace the script.
 6. Do **not** narrate the shell command in the spoken markdown; keep playback out of band.
@@ -202,21 +225,26 @@ Env: `KOKORO_SERVER_DIR` (default `lib/server` in repo), `KOKORO_PORT`, `KOKORO_
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| 20–40s before first audio, stderr says "Starting server" / "model loading" | Cold server — ONNX model not in memory | Run `kokoro-server` at session start, or leave `KOKORO_KEEP_SERVER=1` (default) |
-| 30–90s with no "First audio chunk" line | Prior `/tts` still playing or orphaned client held the queue | Fixed in current kokoro-speak (auto-kill stale clients + `replace` queue). Restart server if on old code: `pkill -f 'lib/server/index.mjs'; kokoro-server` |
-| Instant stderr but long wait on 10k+ char scripts | Normal — first chunk synthesis after long text split | Watch for `First audio chunk in Xs` |
+| 20–40s before first audio | Cold server — ONNX model not in memory | Run `kokoro-server` at session start |
+| No audio / stuck queue | Prior playback still running | `/tts stop` or `kokoro-stop` |
+| Pause does nothing | `afplay` fallback (no ffplay) | `brew install ffmpeg` |
 
 ### Flags the user can pass via `/tts`
 
 | User intent | Behavior |
 |-------------|----------|
-| default | Script + kokoro-speak |
+| default | Script + `kokoro-speak --detach` |
 | `no-play` | Script only (ElevenLabs / manual) |
+| `stop`, `end` | `kokoro-stop` only |
+| `pause` | `kokoro-pause` only |
+| `resume` | `kokoro-resume` only |
 | env `KOKORO_VOICE=am_adam` | Pass through when invoking kokoro-speak |
+
+Pause requires `ffplay` (`brew install ffmpeg`). Without it, stop still works; pause reports that ffplay is needed.
 
 ### Server contract (for debugging)
 
-- Server: `lib/server/index.mjs` — `GET /status`, `POST /speak` (NDJSON stream), `POST /synthesize` (batch).
+- Server: `lib/server/index.mjs` — `GET /status`, `POST /speak` (NDJSON), `POST /synthesize`, `POST /cancel`.
 - macOS: ONNX CoreML EP + q4 weights; sentence-level streaming.
 - Default port `19200`, voice `af_sky`.
 

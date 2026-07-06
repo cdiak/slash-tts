@@ -1,3 +1,5 @@
 node_modules/
 var/server.pid
 var/server.log
+var/kokoro-client.pid
+var/playback-state.json

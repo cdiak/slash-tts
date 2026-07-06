@@ -82,15 +82,36 @@ paths = ["~/grok-build-cli-tts/.grok/skills/tts"]
 /tts recent
 /tts no-play src/main.ts
 /tts ./my-project
+/tts stop
+/tts pause
+/tts resume
 ```
 
-### Fast playback (avoid 30–90s “dead air”)
+## Playback controls
+
+While `kokoro-speak` is running (including detached background playback):
+
+| Command | Effect |
+|---------|--------|
+| `kokoro-stop` or `/tts stop` | End playback and cancel server synthesis |
+| `kokoro-pause` or `/tts pause` | Pause audio (requires `ffplay` from `brew install ffmpeg`) |
+| `kokoro-resume` or `/tts resume` | Resume paused audio |
+
+Detached playback (recommended for long scripts):
+
+```bash
+kokoro-speak --detach script.md   # returns immediately; pid in var/kokoro-client.pid
+kokoro-stop                       # stop anytime
+kokoro-speak --resume script.md   # skip chunks already played (after stop)
+```
+
+New speak requests replace in-flight playback by default (`KOKORO_REPLACE_QUEUE=1`).
+
+### Fast playback tips
 
 1. **Keep the server warm:** `kokoro-server` once per session (or rely on `KOKORO_KEEP_SERVER=1`, the default).
-2. **Cold start is ~20–40s** while the ONNX model loads — stderr shows `Server loading model…` with elapsed seconds.
-3. **New `/tts` replaces in-flight playback** — stale `kokoro-speak` clients are killed and the server queue is cleared automatically.
-4. **Do not background `kokoro-speak` from agents** — cancelled turns used to orphan long playbacks and block the queue for minutes (fixed in current `lib/cli/speak.mjs` + `lib/server/speak-queue.mjs`).
-5. **Gapless sentence batches** — the client now reads NDJSON chunks in parallel with playback and concatenates every buffered sentence into one `afplay` call, removing the old per-sentence two-second stall.
+2. **Cold start is ~20–40s** while the ONNX model loads.
+3. **Gapless sentence batches** — the client reads NDJSON chunks in parallel with playback and batches sentences into fewer play calls.
 
 ---
 
@@ -111,7 +132,12 @@ paths = ["~/grok-build-cli-tts/.grok/skills/tts"]
 
 ```bash
 kokoro-speak script.md          # play markdown script
+kokoro-speak --detach script.md # play in background
 kokoro-speak --text "hello"     # play inline text
 kokoro-speak --no-play --out out.wav script.md
+kokoro-speak --resume script.md # continue after stop
+kokoro-stop                     # end playback
+kokoro-pause                    # pause (ffplay)
+kokoro-resume                   # unpause
 kokoro-server                   # pre-warm daemon
 ```

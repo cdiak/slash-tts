@@ -15,7 +15,7 @@ if [ "$NODE_MAJOR" -lt 18 ]; then
 fi
 
 npm install
-chmod +x bin/kokoro-speak bin/kokoro-server bin/install
+chmod +x bin/kokoro-speak bin/kokoro-server bin/kokoro-stop bin/kokoro-pause bin/kokoro-resume bin/install
 
 echo ""
 echo "Installed. Add to PATH:"
